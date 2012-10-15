@@ -1,4 +1,4 @@
-// Package m provides a simple bidirectional type to database row mapper.
+// Package m provides a simple way to bidirectionally marshal structs to a database.
 package m
 
 import (
@@ -19,7 +19,7 @@ func NewMapping() *Mapping {
 	return &Mapping{tables: make(map[reflect.Type]string)}
 }
 
-// AddTable adds a table to type mapping to a Mapping.
+// AddTable adds a table to struct mapping to a Mapping.
 //	M.AddTable("posts", Post{})
 func (m *Mapping) AddTable(name string, thing interface{}) {
 	typ := reflect.TypeOf(thing)
@@ -30,12 +30,23 @@ func (m *Mapping) AddTable(name string, thing interface{}) {
 // If a field is nil it will not be part of the INSERT statement.
 func (m *Mapping) Insert(thing interface{}) error {
 	typ, name := m.lookupTable(thing)
-	columns, values := prepareSqlColumnsValues(thing, typ)
+	columns, values := prepareInsertSqlColumnsValues(thing, typ)
 	_, err := m.DB.Exec(sqlInsertString(name, columns), values...)
 	return err
 }
 
-// Select queries the database and returns a slice containing the returned rows scanned into the same type as thing.
+// Update takes a struct and a map of column names to data and updates the struct and the database row.
+func (m *Mapping) Update(thing interface{}, data map[string]interface{}) error {
+	typ, name := m.lookupTable(thing)
+	columns, values := updateAndGetSqlColumnsValues(thing, typ, data)
+	key_columns, key_values := keysForUpdate(thing, typ)
+	values = append(values, key_values...)
+	_, err := m.DB.Exec(sqlUpdateString(name, columns, key_columns), values...)
+	return err
+}
+
+// Select queries the database and returns a slice containing the returned rows scanned into structs with 
+// the same type as thing.
 func (m *Mapping) Select(thing interface{}, query string, bindings ...interface{}) ([]interface{}, error) {
 	return m.doSelect(thing, query, bindings...)
 }
@@ -143,11 +154,9 @@ func tableType(thing interface{}) reflect.Type {
 	return reflect.TypeOf(thingPointer.Elem().Interface())
 }
 
-func prepareSqlColumnsValues(thing interface{}, thingType reflect.Type) ([]string, []interface{}) {
+func prepareInsertSqlColumnsValues(thing interface{}, thingType reflect.Type) (columns []string, values []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
 	numFields := thingType.NumField()
-	var columns []string
-	var values []interface{}
 
 	for i := 0; i < numFields; i++ {
 		field := thingType.Field(i)
@@ -180,4 +189,68 @@ func sqlInsertString(tableName string, columns []string) string {
 	columnsStr := strings.Join(columns, ", ")
 	valuesStr := strings.TrimRight(strings.Repeat("?, ", len(columns)), ", ")
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, columnsStr, valuesStr)
+}
+
+func updateAndGetSqlColumnsValues(thing interface{}, thingType reflect.Type, data map[string]interface{}) (columns []string, values []interface{}) {
+	thingValue := reflect.Indirect(reflect.ValueOf(thing))
+	numFields := thingType.NumField()
+
+	for i := 0; i < numFields; i++ {
+		field := thingType.Field(i)
+		column := field.Tag.Get("db")
+		if val, ok := data[column]; ok {
+			destField := thingValue.Field(i)
+			serialize := field.Tag.Get("serialize")
+			value := reflect.ValueOf(val)
+
+			// assign the value from the data map to the destination struct field
+			destField.Set(value)
+
+			if serialize != "" {
+				// TODO(jr): don't eat this marshal error value
+				marshaled, _ := json.Marshal(val)
+				values = append(values, string(marshaled))
+			} else {
+				values = append(values, reflect.Indirect(value).Interface())
+			}
+			columns = append(columns, column)
+		}
+	}
+
+	return columns, values
+}
+
+func keysForUpdate(thing interface{}, thingType reflect.Type) (columns []string, values []interface{}) {
+	thingValue := reflect.Indirect(reflect.ValueOf(thing))
+	numFields := thingType.NumField()
+
+	for i := 0; i < numFields; i++ {
+		field := thingType.Field(i)
+		if field.Tag.Get("pk") == "" {
+			continue
+		}
+
+		column := field.Tag.Get("db")
+		value := thingValue.Field(i)
+
+		columns = append(columns, column)
+		values = append(values, reflect.Indirect(value).Interface())
+	}
+
+	return columns, values
+}
+
+func columnPlaceholders(columns []string, sep string) (res string) {
+	count := len(columns)
+	for i, column := range columns {
+		res += column + " = ?"
+		if i+1 < count {
+			res += sep
+		}
+	}
+	return
+}
+
+func sqlUpdateString(tableName string, columns []string, keys []string) string {
+	return fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, columnPlaceholders(columns, ", "), columnPlaceholders(keys, " AND "))
 }
