@@ -4,9 +4,10 @@ package m
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/titanous/go-backports/database/sql"
 	"reflect"
 	"strings"
+
+	"github.com/titanous/go-backports/database/sql"
 )
 
 type Mapping struct {
