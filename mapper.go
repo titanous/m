@@ -39,10 +39,10 @@ func (m *Mapping) AddTable(name string, thing interface{}) {
 	m.tables[typ] = tableMap{name, typ, getTableColumns(thing, typ)}
 }
 
-func getTableColumns(thing interface{}, typ reflect.Type) (columns []columnMap) {
-	fieldCount := typ.NumField()
+func getTableColumns(thing interface{}, typ reflect.Type) []columnMap {
+	columns := make([]columnMap, 0, typ.NumField())
 
-	for i := 0; i < fieldCount; i++ {
+	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		tag := strings.Split(field.Tag.Get("db"), ",")
 		if len(tag) > 0 {
@@ -187,8 +187,10 @@ func tableType(thing interface{}) reflect.Type {
 	return thingVal.Type()
 }
 
-func prepareInsertSqlColumnsValues(thing interface{}, table tableMap) (columns []string, values []interface{}) {
+func prepareInsertSqlColumnsValues(thing interface{}, table tableMap) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
+	columns := make([]string, 0, len(table.Columns))
+	values := make([]interface{}, 0, len(table.Columns))
 
 	for i := 0; i < len(table.Columns); i++ {
 		column := table.Columns[i]
@@ -220,8 +222,10 @@ func sqlInsertString(tableName string, columns []string) string {
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, columnsStr, valuesStr)
 }
 
-func updateAndGetSqlColumnsValues(thing interface{}, table tableMap, data map[string]interface{}) (columns []string, values []interface{}) {
+func updateAndGetSqlColumnsValues(thing interface{}, table tableMap, data map[string]interface{}) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
+	columns := make([]string, 0, len(table.Columns))
+	values := make([]interface{}, 0, len(table.Columns))
 
 	for i := 0; i < len(table.Columns); i++ {
 		column := table.Columns[i]
@@ -247,8 +251,10 @@ func updateAndGetSqlColumnsValues(thing interface{}, table tableMap, data map[st
 	return columns, values
 }
 
-func keysForUpdate(thing interface{}, table tableMap) (columns []string, values []interface{}) {
+func keysForUpdate(thing interface{}, table tableMap) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
+	columns := make([]string, 0, len(table.Columns))
+	values := make([]interface{}, 0, len(table.Columns))
 
 	for i := 0; i < len(table.Columns); i++ {
 		column := table.Columns[i]
