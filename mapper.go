@@ -46,7 +46,7 @@ func getTableColumns(thing interface{}, typ reflect.Type) []columnMap {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		tag := strings.Split(field.Tag.Get("db"), ",")
-		if len(tag) > 0 {
+		if len(tag) > 0 && tag[0] != "" {
 			col := columnMap{Field: i}
 			for _, flag := range tag {
 				switch flag {
