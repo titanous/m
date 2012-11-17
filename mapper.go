@@ -10,8 +10,20 @@ import (
 	"github.com/titanous/go-backports/database/sql"
 )
 
+const (
+	Cassandra DBType = iota
+	PostgreSQL
+)
+
+type DBType int
+
+func (t DBType) NewMapping() *Mapping {
+	return &Mapping{Type: t, tables: make(map[reflect.Type]tableMap)}
+}
+
 type Mapping struct {
-	DB *sql.DB
+	DB   *sql.DB
+	Type DBType
 
 	tables map[reflect.Type]tableMap
 }
@@ -27,10 +39,6 @@ type columnMap struct {
 	Serialize  bool
 	PrimaryKey bool
 	Field      int
-}
-
-func NewMapping() *Mapping {
-	return &Mapping{tables: make(map[reflect.Type]tableMap)}
 }
 
 // AddTable adds a table to struct mapping to a Mapping.
@@ -72,7 +80,7 @@ func getTableColumns(thing interface{}, typ reflect.Type) []columnMap {
 func (m *Mapping) Insert(thing interface{}) error {
 	table := m.lookupTable(thing)
 	columns, values := prepareInsertSqlColumnsValues(thing, table)
-	_, err := m.DB.Exec(sqlInsertString(table.Name, columns), values...)
+	_, err := m.DB.Exec(sqlInsertString(table.Name, columns, m.Type), values...)
 	return err
 }
 
@@ -82,7 +90,7 @@ func (m *Mapping) Update(thing interface{}, data map[string]interface{}) error {
 	columns, values := updateAndGetSqlColumnsValues(thing, table, data)
 	key_columns, key_values := keysForUpdate(thing, table)
 	values = append(values, key_values...)
-	_, err := m.DB.Exec(sqlUpdateString(table.Name, columns, key_columns), values...)
+	_, err := m.DB.Exec(sqlUpdateString(table.Name, columns, key_columns, m.Type), values...)
 	return err
 }
 
@@ -217,9 +225,21 @@ func prepareInsertSqlColumnsValues(thing interface{}, table tableMap) ([]string,
 	return columns, values
 }
 
-func sqlInsertString(tableName string, columns []string) string {
+func sqlInsertString(tableName string, columns []string, dbt DBType) string {
+	var valuesStr string
 	columnsStr := strings.Join(columns, ", ")
-	valuesStr := strings.TrimRight(strings.Repeat("?, ", len(columns)), ", ")
+	for i := range columns {
+		var placeholder string
+		if dbt == PostgreSQL {
+			placeholder = fmt.Sprintf("$%d", i+1)
+		} else {
+			placeholder = "?"
+		}
+		valuesStr += placeholder
+		if i < len(columns)-1 {
+			valuesStr += ", "
+		}
+	}
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, columnsStr, valuesStr)
 }
 
@@ -273,10 +293,17 @@ func keysForUpdate(thing interface{}, table tableMap) ([]string, []interface{}) 
 	return columns, values
 }
 
-func columnPlaceholders(columns []string, sep string) (res string) {
+func columnPlaceholders(columns []string, sep string, dbt DBType) (res string) {
 	count := len(columns)
 	for i, column := range columns {
-		res += column + " = ?"
+		var placeholder string
+		if dbt == PostgreSQL {
+			placeholder = fmt.Sprintf("$%d", i+1)
+		} else {
+			placeholder = "?"
+		}
+
+		res += column + " = " + placeholder
 		if i+1 < count {
 			res += sep
 		}
@@ -284,6 +311,6 @@ func columnPlaceholders(columns []string, sep string) (res string) {
 	return
 }
 
-func sqlUpdateString(tableName string, columns []string, keys []string) string {
-	return fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, columnPlaceholders(columns, ", "), columnPlaceholders(keys, " AND "))
+func sqlUpdateString(tableName string, columns []string, keys []string, dbt DBType) string {
+	return fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, columnPlaceholders(columns, ", ", dbt), columnPlaceholders(keys, " AND ", dbt))
 }
