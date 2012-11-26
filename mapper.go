@@ -84,6 +84,11 @@ func (m *Mapping) Insert(thing interface{}) error {
 	return err
 }
 
+func (m *Mapping) InsertValues(table string, columns []string, values ...interface{}) error {
+	_, err := m.DB.Exec(sqlInsertString(table, columns, m.Type), values...)
+	return err
+}
+
 // Update takes a struct and a map of column names to data and updates the struct and the database row.
 func (m *Mapping) Update(thing interface{}, data map[string]interface{}) error {
 	table := m.lookupTable(thing)
