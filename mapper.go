@@ -18,20 +18,20 @@ const (
 type DBType int
 
 func (t DBType) NewMapping() *Mapping {
-	return &Mapping{Type: t, tables: make(map[reflect.Type]tableMap)}
+	return &Mapping{Type: t, tables: make(map[reflect.Type]*tableMap)}
 }
 
 type Mapping struct {
 	DB   *sql.DB
 	Type DBType
 
-	tables map[reflect.Type]tableMap
+	tables map[reflect.Type]*tableMap
 }
 
 type tableMap struct {
 	Name    string
 	Type    reflect.Type
-	Columns []columnMap
+	Columns []*columnMap
 	m       *Mapping
 }
 
@@ -46,17 +46,17 @@ type columnMap struct {
 //	M.AddTable("posts", Post{})
 func (m *Mapping) AddTable(name string, thing interface{}) {
 	typ := reflect.TypeOf(thing)
-	m.tables[typ] = tableMap{name, typ, getTableColumns(thing, typ), m}
+	m.tables[typ] = &tableMap{name, typ, getTableColumns(thing, typ), m}
 }
 
-func getTableColumns(thing interface{}, typ reflect.Type) []columnMap {
-	columns := make([]columnMap, 0, typ.NumField())
+func getTableColumns(thing interface{}, typ reflect.Type) []*columnMap {
+	columns := make([]*columnMap, 0, typ.NumField())
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		tag := strings.Split(field.Tag.Get("db"), ",")
 		if len(tag) > 0 && tag[0] != "" {
-			col := columnMap{Field: i}
+			col := &columnMap{Field: i}
 			for _, flag := range tag {
 				switch flag {
 				case "pk":
@@ -110,13 +110,13 @@ func (m *Mapping) SelectOne(thing interface{}, query string, bindings ...interfa
 	return res[0], nil
 }
 
-func (t tableMap) insert(thing interface{}) error {
+func (t *tableMap) insert(thing interface{}) error {
 	columns, values := prepareInsertSqlColumnsValues(thing, t)
 	_, err := t.m.DB.Exec(sqlInsertString(t.Name, columns, t.m.Type), values...)
 	return err
 }
 
-func (t tableMap) update(thing interface{}, data map[string]interface{}) error {
+func (t *tableMap) update(thing interface{}, data map[string]interface{}) error {
 	columns, values := updateAndGetSqlColumnsValues(thing, t, data)
 	keyColumns, keyValues := keysForUpdate(thing, t)
 	values = append(values, keyValues...)
@@ -125,7 +125,7 @@ func (t tableMap) update(thing interface{}, data map[string]interface{}) error {
 }
 
 // Mostly taken from https://github.com/coopernurse/gorp by James Cooper
-func (t tableMap) doSelect(query string, bindings ...interface{}) ([]interface{}, error) {
+func (t *tableMap) doSelect(query string, bindings ...interface{}) ([]interface{}, error) {
 	rows, err := t.m.DB.Query(query, bindings...)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (t tableMap) doSelect(query string, bindings ...interface{}) ([]interface{}
 		deserializeValues := make(map[int]interface{})
 
 		for x := range columns {
-			var column columnMap
+			var column *columnMap
 			columnName := columns[x]
 
 			for i := 0; i < len(t.Columns); i++ {
@@ -190,7 +190,7 @@ func (t tableMap) doSelect(query string, bindings ...interface{}) ([]interface{}
 	return results, nil
 }
 
-func (m *Mapping) lookupTable(thing interface{}) tableMap {
+func (m *Mapping) lookupTable(thing interface{}) *tableMap {
 	typ := tableType(thing)
 	if table, ok := m.tables[typ]; ok {
 		return table
@@ -207,7 +207,7 @@ func tableType(thing interface{}) reflect.Type {
 	return thingVal.Type()
 }
 
-func prepareInsertSqlColumnsValues(thing interface{}, table tableMap) ([]string, []interface{}) {
+func prepareInsertSqlColumnsValues(thing interface{}, table *tableMap) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
 	columns := make([]string, 0, len(table.Columns))
 	values := make([]interface{}, 0, len(table.Columns))
@@ -254,7 +254,7 @@ func sqlInsertString(tableName string, columns []string, dbt DBType) string {
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, columnsStr, valuesStr)
 }
 
-func updateAndGetSqlColumnsValues(thing interface{}, table tableMap, data map[string]interface{}) ([]string, []interface{}) {
+func updateAndGetSqlColumnsValues(thing interface{}, table *tableMap, data map[string]interface{}) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
 	columns := make([]string, 0, len(table.Columns))
 	values := make([]interface{}, 0, len(table.Columns))
@@ -283,7 +283,7 @@ func updateAndGetSqlColumnsValues(thing interface{}, table tableMap, data map[st
 	return columns, values
 }
 
-func keysForUpdate(thing interface{}, table tableMap) ([]string, []interface{}) {
+func keysForUpdate(thing interface{}, table *tableMap) ([]string, []interface{}) {
 	thingValue := reflect.Indirect(reflect.ValueOf(thing))
 	columns := make([]string, 0, len(table.Columns))
 	values := make([]interface{}, 0, len(table.Columns))
