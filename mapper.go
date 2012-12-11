@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/titanous/go-backports/database/sql"
@@ -108,6 +109,10 @@ func (m *Mapping) SelectOne(thing interface{}, query string, bindings ...interfa
 		return nil, err
 	}
 	return res[0], nil
+}
+
+func (m *Mapping) Query(thing interface{}, columns string) *Query {
+	return &Query{columns: columns, t: m.lookupTable(thing)}
 }
 
 func (t *tableMap) insert(thing interface{}) error {
@@ -324,4 +329,56 @@ func columnPlaceholders(columns []string, sep string, dbt DBType) (res string) {
 
 func sqlUpdateString(tableName string, columns []string, keys []string, dbt DBType) string {
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, columnPlaceholders(columns, ", ", dbt), columnPlaceholders(keys, " AND ", dbt))
+}
+
+type Query struct {
+	columns    string
+	conditions []string
+	bindings   []interface{}
+	limit      int
+	order      string
+	t          *tableMap
+}
+
+func (q *Query) Where(condition string, binding interface{}) *Query {
+	if condition[len(condition)-2] != ' ' {
+		condition += " ="
+	}
+	condition += " ?"
+	q.conditions = append(q.conditions, condition)
+	q.bindings = append(q.bindings, binding)
+
+	return q
+}
+
+func (q *Query) Limit(n int) *Query {
+	q.limit = n
+	return q
+}
+
+func (q *Query) Order(o string) *Query {
+	q.order = o
+	return q
+}
+
+func (q *Query) Do() ([]interface{}, error) {
+	return q.t.doSelect(q.String(), q.bindings...)
+}
+
+func (q *Query) String() string {
+	s := "SELECT " + q.columns + " FROM " + q.t.Name
+
+	if len(q.conditions) > 0 {
+		s += " WHERE " + strings.Join(q.conditions, " AND ")
+	}
+
+	if q.order != "" {
+		s += " ORDER BY " + q.order
+	}
+
+	if q.limit > 0 {
+		s += " LIMIT " + strconv.Itoa(q.limit)
+	}
+
+	return s
 }
