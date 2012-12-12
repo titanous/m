@@ -153,15 +153,16 @@ func (t *tableMap) doSelect(query string, bindings ...interface{}) ([]interface{
 			var column *columnMap
 			columnName := columns[x]
 
-			for i := 0; i < len(t.Columns); i++ {
-				if t.Columns[i].Name == columnName {
-					column = t.Columns[i]
+			for _, c := range t.Columns {
+				if c.Name == columnName {
+					column = c
 					break
 				}
 			}
 
-			if column.Name == "" {
-				return nil, fmt.Errorf("m: No field `%s` in type %s (query: `%s`)", columnName, t.Type.Name(), query)
+			if column == nil { // column not defined in type struct, so eat the value
+				values[x] = make([]byte, 0)
+				continue
 			}
 
 			field := instance.Elem().Field(column.Field)
