@@ -242,22 +242,22 @@ func prepareInsertSqlColumnsValues(thing interface{}, table *tableMap) ([]string
 	return columns, values
 }
 
-func sqlInsertString(tableName string, columns []string, dbt DBType) string {
-	var valuesStr string
-	columnsStr := strings.Join(columns, ", ")
-	for i := range columns {
-		var placeholder string
-		if dbt == PostgreSQL {
-			placeholder = fmt.Sprintf("$%d", i+1)
-		} else {
-			placeholder = "?"
+func sqlPlaceholders(n int, dbt DBType) (p string) {
+	if dbt == PostgreSQL {
+		for i := 0; i < n; i++ {
+			p += fmt.Sprintf("$%d", i+1)
+			if i < n-1 {
+				p += ", "
+			}
 		}
-		valuesStr += placeholder
-		if i < len(columns)-1 {
-			valuesStr += ", "
-		}
+		return p
 	}
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, columnsStr, valuesStr)
+
+	return strings.Repeat("?, ", n)[:(n*3)-2]
+}
+
+func sqlInsertString(tableName string, columns []string, dbt DBType) string {
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, strings.Join(columns, ", "), sqlPlaceholders(len(columns), dbt))
 }
 
 func updateAndGetSqlColumnsValues(thing interface{}, table *tableMap, data map[string]interface{}) ([]string, []interface{}) {
@@ -348,6 +348,13 @@ func (q *Query) Where(condition string, binding interface{}) *Query {
 	condition += " ?"
 	q.conditions = append(q.conditions, condition)
 	q.bindings = append(q.bindings, binding)
+
+	return q
+}
+
+func (q *Query) In(column string, bindings ...interface{}) *Query {
+	q.conditions = append(q.conditions, column+" IN ("+sqlPlaceholders(len(bindings), q.t.m.Type)+")")
+	q.bindings = append(q.bindings, bindings...)
 
 	return q
 }
