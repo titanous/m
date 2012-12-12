@@ -112,7 +112,7 @@ func (m *Mapping) SelectOne(thing interface{}, query string, bindings ...interfa
 }
 
 func (m *Mapping) Query(thing interface{}, columns string) *Query {
-	return &Query{columns: columns, t: m.lookupTable(thing)}
+	return &Query{columns: columns, t: m.lookupTable(thing), conditions: make([]string, 0, 5), bindings: make([]interface{}, 0, 5)}
 }
 
 func (t *tableMap) insert(thing interface{}) error {
