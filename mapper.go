@@ -342,7 +342,7 @@ type Query struct {
 }
 
 func (q *Query) Where(condition string, binding interface{}) *Query {
-	if condition[len(condition)-2] != ' ' || condition[len(condition)-3] != ' ' {
+	if condition[len(condition)-1] != '=' && condition[len(condition)-1] != '>' && condition[len(condition)-1] != '<' {
 		condition += " ="
 	}
 	condition += " ?"
