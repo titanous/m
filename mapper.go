@@ -115,6 +115,11 @@ func (m *Mapping) Query(thing interface{}, columns string) *Query {
 	return &Query{columns: columns, t: m.lookupTable(thing), conditions: make([]string, 0, 5), bindings: make([]interface{}, 0, 5)}
 }
 
+func (m *Mapping) QueryTable(table string, thing interface{}, columns string) *Query {
+	t := m.lookupTable(thing)
+	return &Query{columns: columns, t: &tableMap{table, t.Type, t.Columns, t.m}, conditions: make([]string, 0, 5), bindings: make([]interface{}, 0, 5)}
+}
+
 func (t *tableMap) insert(thing interface{}) error {
 	columns, values := prepareInsertSqlColumnsValues(thing, t)
 	_, err := t.m.DB.Exec(sqlInsertString(t.Name, columns, t.m.Type), values...)
